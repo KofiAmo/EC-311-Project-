@@ -57,6 +57,7 @@ reg [28:0] randnum;
 reg [28:0] randnum2;
 reg [28:0] randnum3;
 reg [28:0] randnum4;
+reg [28:0] lfsr;
 
 
 reg [28:0] hammer_timer;     // Time for hammer availability
@@ -91,12 +92,13 @@ always @(posedge clk or posedge reset) begin
 //        randnum2 <= $urandom_range(10, 30);
 //        randnum3 <= $urandom_range(10, 30);
 //        randnum4 <= $urandom_range(10, 30);
-
-        randnum <= 100_000_001;
-        randnum2 <= 100_000_002;
-        randnum3 <= 100_000_003;
-        randnum4 <= 100_000_000;
         
+        lfsr <= 29'h1FFFFFFF;
+        randnum <= (lfsr % 200_000_000) + 100_000_000;
+        randnum2 <= (lfsr % 200_000_000) + 100_000_000;
+        randnum3 <= (lfsr % 200_000_000) + 100_000_000;
+        randnum4 <= (lfsr % 200_000_000) + 100_000_000;
+
     end else begin
         button_prev <= button;  // Update button_prev on every clock cycle
         button_prev2 <= button2;
@@ -112,11 +114,13 @@ always @(posedge clk or posedge reset) begin
 //        randnum2 <= $urandom_range(10, 30);
 //        randnum3 <= $urandom_range(10, 30);
 //        randnum4 <= $urandom_range(10, 30);
-
-        randnum <= 100_000_001;
-        randnum2 <= 100_000_002;
-        randnum3 <= 100_000_003;
-        randnum4 <= 100_000_000;
+        
+        lfsr <= {lfsr[27:0], lfsr[28] ^ lfsr[26]};
+        
+        randnum <= (lfsr % 200_000_000) + 100_000_000;
+        randnum2 <= (lfsr % 200_000_000) + 100_000_000;
+        randnum3 <= (lfsr % 200_000_000) + 100_000_000;
+        randnum4 <= (lfsr % 200_000_000) + 100_000_000;
     end
 end
 
@@ -198,68 +202,197 @@ always @(negedge clk or posedge reset) begin
                 end
                 
                 // Next, we decrement the new mole timer, and check if it has hit 0:
-                
+                // Mole Timer Logic
+                if (mole_timer > 0) begin
+                    mole_timer <= mole_timer - 1; // Decrement mole timer
+                end else if (mole_timer == 0) begin    
+                    // Randomly activate a mole when the timer hits 0
+                    case (lfsr[1:0]) // Randomly select one mole
+                        2'b00: begin 
+                            mole <= 1; 
+                            mole2 <= 0;
+                            mole3 <= 0;
+                            mole4 <= 0;
+                        end
+                        2'b01: begin 
+                            mole <= 0;
+                            mole2 <= 1;
+                            mole3 <= 0;
+                            mole4 <= 0;
+                        end
+                        2'b10: begin 
+                            mole <= 0;
+                            mole2 <= 0;
+                            mole3 <= 1;
+                            mole4 <= 0;
+                        end
+                        2'b11: begin 
+                            mole <= 0;
+                            mole2 <= 0;
+                            mole3 <= 0;
+                            mole4 <= 1;
+                        end                   
+                    endcase
+        
+                    hammer_timer <= 300_000_000; // Reset hammer timer (3 seconds)
+                    mole_timer <= (lfsr % 200_000_000) + 100_000_000; // Randomly reset mole timer (1-3 seconds)
+                end
+
+                // Dynamic Hammer Timer Adjustment
+                if (hammer_timer > 250_000_000) begin // Only reduce if hammer_timer is long enough
+                    if ((score >= 8) && (score < 16)) begin
+                        hammer_timer <= hammer_timer - reduced_speed; // Adjust hammer_timer
+                    end else if ((score >= 16) && (score < 24)) begin 
+                        hammer_timer <= hammer_timer - reduced_speed;
+                    end else if ((score >= 24) && (score < 32)) begin
+                        hammer_timer <= hammer_timer - reduced_speed;
+                    end else if ((score >= 32) && (score < 40)) begin
+                        hammer_timer <= hammer_timer - reduced_speed;
+                    end else if ((score >= 40) && (score < 48)) begin
+                        hammer_timer <= hammer_timer - reduced_speed;
+                    end else if ((score >= 48) && (score < 56)) begin
+                        hammer_timer <= hammer_timer - reduced_speed;
+                    end else if ((score >= 56) && (score < 58)) begin
+                        hammer_timer <= hammer_timer - reduced_speed;
+                    end else if ((score >= 58) && (score < 60)) begin
+                        hammer_timer <= hammer_timer - reduced_speed;
+                    end else if (score >= 60) begin
+                        hammer_timer <= hammer_timer - reduced_speed;
+                    end
+                end
+
+                // Hammer Timer Logic
+                if (hammer_timer > 0) begin
+                    hammer_timer <= hammer_timer - 1; // Decrement hammer timer
+                end else if (hammer_timer == 0) begin
+                    // Player missed the mole
+                    lives <= lives - 1;  // Decrement lives
+                    mole <= 0;
+                    mole2 <= 0;
+                    mole3 <= 0;
+                    mole4 <= 0; // Turn off active mole
+
+                    // Check if lives are exhausted
+                    if (lives == 0) begin
+                        state <= 3'b111; // Transition to END_SCREEN
+                    end
+                end
+
+                // Correct Button Press Logic
+                if ((button && mole) || (button2 && mole2) || (button3 && mole3) || (button4 && mole4)) begin
+                    score <= score + 1; // Increment score
+                    mole <= 0;
+                    mole2 <= 0;
+                    mole3 <= 0;
+                    mole4 <= 0; // Turn off active mole
+                    hammer_timer <= 0; // Disable hammer timer
+                end    
+
+                // Incorrect Button Press Logic
+                else if ((button && !mole) || (button2 && !mole2) || (button3 && !mole3) || (button4 && !mole4)) begin
+                    lives <= lives - 1;  // Decrement lives
+                    if (lives == 0) begin
+                        state <= 3'b111; // Transition to END_SCREEN
+                    end 
+                end
+            end
+                /*
                 //else if (mole_timer > 0 || mole_timer2 > 0 || mole_timer3 > 0 || mole_timer4 > 0) begin
                 else if (mole_timer > 0) begin
-                    mole_timer = mole_timer - 1;
-                    mole_timer2 = mole_timer2 - 1;
-                    mole_timer3 = mole_timer3 - 1;
-                    mole_timer4 = mole_timer4 - 1;
+                    mole_timer <= mole_timer - 1;
+                end
+                else if (mole_timer == 0) begin    
                     
                     // if mole timer has hit zero, we turn mole on, turn off other timers, and trigger the start of hammer logic
                     // MOLE 1
-                    if (mole_timer == 0) begin
-                        mole <= 1;          // If 0, turn on the mole 
-                        mole_timer2 <= 0;   // reset other timers
-                        mole_timer3 <= 0;
-                        mole_timer4 <= 0;
-                    end
-                    // We do the same check for the rest of the timers:
-                    // We use else if's since we only want this triggering for the first, then to skip this code until next gameplay cycle
-                    // MOLE 2
-                    else if (mole_timer2 == 0) begin
-                        mole2 <= 1;          // If 0, turn on the mole 
-                        mole_timer <= 0;   // reset other timers
-                        mole_timer3 <= 0;
-                        mole_timer4 <= 0;
-                    end
-                    // MOLE 3
-                    else if (mole_timer3 == 0) begin
-                        mole3 <= 1;          // If 0, turn on the mole 
-                        mole_timer2 <= 0;   // reset other timers
-                        mole_timer <= 0;
-                        mole_timer4 <= 0;
-                    end
-                    // MOLE 4
-                    else if (mole_timer4 == 0) begin
-                        mole4 <= 1;          // If 0, turn on the mole 
-                        mole_timer2 <= 0;    // reset other timers
-                        mole_timer3 <= 0;
-                        mole_timer <= 0;
-                    end
-                    
-                end
+                    if (mole_timer == 0 && !mole && !mole2 && !mole3 && !mole4) begin
+                        case (lfsr[1:0])
+                            2'b00: begin 
+                                mole <= 1; 
+                                mole2 <= 0;
+                                mole3 <= 0;
+                                mole4 <= 0;
+                            end
+                            2'b01: begin 
+                                mole <= 0;
+                                mole2 <= 1;
+                                mole3 <= 0;
+                                mole4 <= 0;
+                            end
+                            2'b10: begin 
+                                mole <= 0;
+                                mole2 <= 0;
+                                mole3 <= 1;
+                                mole4 <= 0;
+                            end
+                            2'b11: begin 
+                                mole <= 0;
+                                mole2 <= 0;
+                                mole3 <= 0;
+                                mole4 <= 1;
+                            end                   
+                        endcase
                 
-                // Hammer timer logic starts only when one of the mole turns on (ie mole timer == 0 and prev case does not trigger):
-                else if (hammer_timer > 0 && (mole == 1 || mole2==1 || mole3 == 1 || mole4 == 1)) begin
-                    // decreases hammer timer every clk cycle until 0:
-                    hammer_timer <= hammer_timer - 1; 
+                        // Reset the mole timer with a new random value
+                        mole_timer <= (lfsr % 200_000_000) + 100_000_000;
+                        hammer_timer <= 300_000_000;  // Set hammer timer
+                 
+                    end   
                     
-                   // Multi-mole version: 2 cases, either correct button correct mole or not
-                   // Case 1: correct button
-                   if ((button && !button_prev && mole == 1) || (button2 && !button_prev2 && mole2 == 1) || (button3 && !button_prev3 && mole3 == 1) || (button4 && !button_prev4 && mole4 == 1)) begin
-                        score <= score + 1;
+                    // Multi-mole version: 2 cases, either correct button correct mole or not
+                    // Case 1: correct button
+                    if ((button && mole) || (button2 && mole2) || (button3 && mole3) || (button4 && mole4)) begin
+                        score <= score + 1; // Increment score
                         mole <= 0;
                         mole2 <= 0;
                         mole3 <= 0;
-                        mole4 <= 0;
-                        // NOTE: currently hardcoded for debugging, but just need to change it to equal equivilanet randnum# input
+                        mole4 <= 0; // turn off active mole
+                        mole_timer <= (lfsr % 200_000_000) + 100_000_000;
+                    end    
+                   
+                    //Case 2: Wrong button  
+                    else if ((button && !mole) || (button2 && !mole2) || (button3 && !mole3) || (button4 && !mole4)) begin
+                            //score <= score + 1;
+                            lives <= lives - 1;  
+                            if (lives == 0) begin
+                                //state <= END_SCREEN;  // Go to end screen if no lives left
+                                //state <= IDLE;
+                                state <= 3'b111;
+                            end 
+                    end 
+                   
+                    // We reach here when varaible have yet to reset and missed chance to hit button while timer was on (both timers are now 0)
+                    // Here, we handle the lose a life case:
+                    if (hammer_timer > 0) begin
+                        hammer_timer <= hammer_timer - 1;
+                    end
+                    else if (hammer_timer == 0) begin
+                        lives <= lives - 1;  // Decrement lives for missing the mole
+                        mole <= 0;
+                        mole2 <= 0;
+                        mole3 <= 0;
+                        mole4 <= 0;  // Turn off active mole
+                        mole_timer <= (lfsr % 200_000_000) + 100_000_000;  // Reset mole timer
+                    end
+                   
+                    // if this triggers, go to END SCREEN the next clk cycle (the other variable resets will happen later)
+                    if (lives == 0) begin
+                        //state <= END_SCREEN;  // Go to end screen if no lives left
+                        //state <= IDLE;
+                        state <= 3'b111;
+                    end 
+                    
+                    // If that did not trigger, then there are still lives remaining. Reset the timers to begin gameplay loop all over again
+                    else begin
                         mole_timer <= randnum;
                         mole_timer2 <= randnum2;        
                         mole_timer3 <= randnum3;
                         mole_timer4 <= randnum4;
-                        hammer_timer <= 300_000_000;
-                        
+                        hammer_timer <=  300_000_000;                 
+                    end
+                end
+                   
+                   /*
                         // DYNAMIC TIMER INCREASE
                         if (hammer_timer > 250_000_000) begin // can mess with this value and that of reduced_speed
                             if ((score >= 8) && (score < 16)) begin
@@ -290,58 +423,19 @@ always @(negedge clk or posedge reset) begin
                             end         
                        end
                    end
-                   //Case 2: Wrong button  
-                   else if ((mole == 1 && (button2 || button3 || button4)) || (mole2 == 1 && (button || button3 || button4)) || (mole3 == 1 && (button || button2 || button4)) || (mole4 == 1 && (button || button2 || button3))) begin
-                            //score <= score + 1;
-                            lives <= lives - 1;  
-                            mole <= 0;
-                            mole2 <= 0;
-                            mole3 <= 0;
-                            mole4 <= 0;
-                            if (lives == 0) begin
-                                //state <= END_SCREEN;  // Go to end screen if no lives left
-                                //state <= IDLE;
-                                state <= 3'b111;
-                            end 
-                        
-                            else begin
-                                //NOTE: currently hardcoded for debugging, but just need to change it to equal equivilanet randnum# input
-                                mole_timer <= randnum;
-                                mole_timer2 <= randnum2;        
-                                mole_timer3 <= randnum3;
-                                mole_timer4 <= randnum4; 
-                                hammer_timer <=  300_000_000;                 
-                            end
-                   end
-                end 
+                   */
+                   
+ 
                 
                 // We reach here when varaible have yet to reset and missed chance to hit button while timer was on (both timers are now 0)
                 // Here, we handle the lose a life case:
-                if (hammer_timer == 0) begin
+               /* if (hammer_timer == 0) begin
                     // Update lives and reset mole to zero
                     lives <= lives - 1;  
                     mole <= 0;
                     mole2 <= 0;
                     mole3 <= 0;
-                    mole4 <= 0;
-                    
-                    // if this triggers, go to END SCREEN the next clk cycle (the other variable resets will happen later)
-                    if (lives == 0) begin
-                        //state <= END_SCREEN;  // Go to end screen if no lives left
-                        //state <= IDLE;
-                        state <= 3'b111;
-                    end 
-                    
-                    // If that did not trigger, then there are still lives remaining. Reset the timers to begin gameplay loop all over again
-                    else begin
-                        mole_timer <= randnum;
-                        mole_timer2 <= randnum2;        
-                        mole_timer3 <= randnum3;
-                        mole_timer4 <= randnum4;
-                        hammer_timer <=  300_000_000;                 
-                    end
-                end
-            end
+                    mole4 <= 0; */
             
             3'b111: begin
                 
